@@ -11,9 +11,9 @@ from aiohttp import web
 
 LOGGER_NAME = 'notify'
 WS_REGISTER = 'ws_register'
-ORD_STATE_READY = 'ready'
+ORD_STATE_RELOAD = 'reload'
 ORD_STATE_DONE = 'done'
-HEARTBEAT = 4
+HEARTBEAT = 60
 CHECK_CONN_DELAY = 2 * HEARTBEAT
 MAX_ORD_CONN_COUNT = 10
 
@@ -59,7 +59,7 @@ async def register_notification(request):
     e_text = ''
     if params['order_id'] not in request.app[WS_REGISTER]:
         e_text = 'no such ws connection'
-    elif not any(params['state'] == state for state in (ORD_STATE_DONE, ORD_STATE_READY)):
+    elif not any(params['state'] == state for state in (ORD_STATE_DONE, ORD_STATE_RELOAD)):
         e_text = 'invalid state {}'.format(params['state'])
 
     if e_text:
@@ -76,11 +76,11 @@ async def register_notification(request):
 
 
 async def notify(register, order_id, state):
-    ws_list = register[order_id]
+    ws_list = register[order_id].copy()  # работаем с копией, чтобы оригинал регистра не изменялся по лету(in place)
     logger.info('send state {} to order {}'.format(state, order_id))
 
     data = {'state': state}
-    if state == ORD_STATE_READY:
+    if state == ORD_STATE_RELOAD:
         for ws in ws_list:
             ws.send_json(data)
     elif state == ORD_STATE_DONE:
@@ -100,7 +100,7 @@ async def register_connection(request):
             if msg.type == aiohttp.WSMsgType.TEXT:
                 logger.debug('message data: {}'.format(msg.data))
                 data = json.loads(msg.data)
-                order_id = data.get('order', '')
+                order_id = data.get('order_id', '')
                 if order_id and len(request.app[WS_REGISTER][order_id]) > MAX_ORD_CONN_COUNT:
                     logger.error('max connections count of the order {}'.format(order_id))
                     ws.close()
@@ -109,6 +109,7 @@ async def register_connection(request):
                     logger.info('add connection to the order {}'.format(order_id))
                 else:
                     logger.error('undefined action')
+                    ws.close()
 
             elif msg.type == aiohttp.WSMsgType.ERROR:
                 logger.error('connection error {}'.format(ws.exception()))
