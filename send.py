@@ -2,26 +2,32 @@ import asyncio
 import aiohttp
 
 
+limit = 15000
 async def send():
-    async with aiohttp.ClientSession() as session:
+    async with aiohttp.ClientSession(connector=aiohttp.connector.TCPConnector(limit=limit)) as session:
 
-        async with session.ws_connect('ws://127.0.0.1:8080/') as ws:
-            print(ws)
-            ws.send_str('order,1')
+        conns = []
+        print('send')
+        for i in range(limit):
+            try:
+                ws = await session.ws_connect('ws://127.0.0.1:8080/')
+                conns.append(ws)
+                ws.send_json({'order_id': str(i)})
+            except:
+                import traceback
+                traceback.print_exc()
 
-            async for msg in ws:
-                print(msg)
-                if not msg.type == aiohttp.WSMsgType.TEXT:
-                    break
+        print('sleep')
+        await asyncio.sleep(10)
 
-                elif msg.type == aiohttp.WSMsgType.TEXT:
-                    print(msg.data)
-                    if msg.data.startswith('state'):
-                        state = msg.data.split(',')[1]
-                        print('refresh state')
-                    elif msg.data == 'close':
-                        await ws.close()
-                        break
+        print('close')
+        for ws in conns:
+            ws.close()
 
-loop = asyncio.get_event_loop()
-loop.run_until_complete(send())
+        print('clear')
+        conns.clear()
+
+
+if __name__ == '__main__':
+    loop = asyncio.get_event_loop()
+    loop.run_until_complete(send())

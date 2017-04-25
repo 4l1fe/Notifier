@@ -105,7 +105,7 @@ async def register_connection(request):
                     logger.error('max connections count of the order {}'.format(order_id))
                     ws.close()
                 elif order_id:
-                    request.app[WS_REGISTER][order_id].append(ws)
+                    request.app[WS_REGISTER][order_id].add(ws)
                     logger.info('add connection to the order {}'.format(order_id))
                 else:
                     logger.error('undefined action')
@@ -149,7 +149,7 @@ if __name__ == '__main__':
     )
 
     app = web.Application()
-    app[WS_REGISTER] = defaultdict(list)
+    app[WS_REGISTER] = defaultdict(set)
     app.router.add_post('/order', register_notification)
     app.router.add_get('/', register_connection)
 
