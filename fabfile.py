@@ -49,7 +49,7 @@ def check_user(func):
 @task
 def bootstrap():
     key_prefix = 'key_tmp'
-    with settings( warn_only=True):
+    with settings(warn_only=True):
         # установка необходимых библиотек с ноля
         run('''apt-get update && \
                apt-get install -y linux-image-extra-$(uname -r) linux-image-extra-virtual && \
@@ -87,44 +87,24 @@ def build(delete=True, ):
     excluded = rsync_exclude.strip().splitlines()
     stop()
     rsync_project(remote_dir=str_project_dir, local_dir='.', exclude=excluded, delete=delete)
-    build_qpay()
+    with cd(str_project_dir):
+        run('docker build -t {} -f {} .'.format(im_name, docker_file))
 
 
 @task(name='start')
 @check_user
 def start(mapped_addr=mapped_addr):
-    start_qpay(mapped_addr=mapped_addr)
+    with cd(str_project_dir):
+        run("docker run -d -ti -p {}:8080 --name {} {}".format(mapped_addr, cont_name, im_name))
 
 
 @task(name='stop')
 @check_user
 def stop():
     with settings(hide('stdout', 'warnings'), warn_only=True):
-        stop_qpay()
-
-
-@task(name='build_qpay')
-@check_user
-def build_qpay():
-    with cd(str_project_dir):
-        run('docker build -t {} -f {} .'.format(im_name, docker_file))
-
-
-@task(name='start_qpay')
-@check_user
-def start_qpay(mapped_addr=mapped_addr):
-    #todo не запускать, если уже работает
-    with cd(str_project_dir):
-        run("docker run -d -ti -p {}:8080 --name {} {}"
-            .format(mapped_addr, cont_name, im_name))
-
-
-@task(name='stop_qpay')
-@check_user
-def stop_qpay():
-    run('docker stop {0} && docker rm {0}'.format(cont_name))
+        run('docker stop {0} && docker rm {0}'.format(cont_name))
 
 
 @task
-def logs_qpay():
+def logs():
     run('docker logs -f {}'.format(cont_name))
