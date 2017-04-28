@@ -16,7 +16,7 @@ docker_file = deploy_dir / 'Dockerfile'
 im_name = cont_name = 'notify'
 
 str_project_dir = str(project_dir)
-mapped_addr = '0.0.0.0:8080'
+mapped_addr = '127.0.0.1:8080'
 rsync_exclude = '''README
 fabfile.py
 tests.py
