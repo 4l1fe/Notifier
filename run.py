@@ -79,7 +79,7 @@ async def notify(register, order_id, state):
     ws_list = register[order_id].copy()  # работаем с копией, чтобы оригинал регистра не изменялся по лету(in place)
     logger.info('send state {} to order {}'.format(state, order_id))
 
-    data = {'state': state}
+    data = {'state': state, 'order_id': order_id}
     if state == ORD_STATE_RELOAD:
         for ws in ws_list:
             ws.send_json(data)
