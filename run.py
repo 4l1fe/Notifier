@@ -12,9 +12,9 @@ LOGGER_NAME = 'notifier'
 REGISTER = 'order_register'
 ORD_STATE_RELOAD = 'reload'
 ORD_STATE_DONE = 'done'
-HEARTBEAT = 60
+HEARTBEAT = 3
 CHECK_CONN_DELAY = 2 * HEARTBEAT
-MAX_ORD_CONN_COUNT = 10
+# MAX_ORD_CONN_COUNT = 10
 
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -23,28 +23,45 @@ logger = logging.getLogger(LOGGER_NAME)
 class WsConnectionRegister:
 
     def __init__(self):
-        self.connection_channels = defaultdict(set)
-        self.channel_connections = defaultdict(set)
+        self._connection_channels_type = set #todo изменить на list? где-то упростит/усложнит код
+        self._channel_connections_type = set
+        self.connection_channels = defaultdict(self._connection_channels_type)
+        self.channel_connections = defaultdict(self._channel_connections_type)
 
-    def add(self, channel, ws_conn):
-        self.connection_channels[ws_conn].add(channel)
-        self.channel_connections[channel].add(ws_conn)
-        logger.info('add the channel {} to the connection {}'.format(channel, ws_conn))
+    def add_channels(self, channels, ws_conn):
+        if not isinstance(channels, (list, tuple, set)):
+            channels = [channels, ]
+        for channel in channels:
+            self.channel_connections[channel].add(ws_conn)
+        self.connection_channels[ws_conn].update(channels)
+        logger.info('add the channels {} to the connection {}'.format(channels, ws_conn))
 
-    def remove(self, channel, ws_conn):
-        self.connection_channels[ws_conn].remove(channel)
-        self.channel_connections[channel].remove(ws_conn)
-        logger.info('remove the channel from the connection {}'.format(channel, ws_conn))
+    def remove_channels(self, channels, ws_conn):
+        if not isinstance(channels, (list, tuple, set)):
+            channels = [channels, ]
+        logger.info('remove the channels from the connection {}'.format(channels, ws_conn))
+        for channel in channels:
+            self.channel_connections[channel].remove(ws_conn)
+            if not self.channel_connections[channel]:
+                logger.info('remove channel {} from the register'.format(channel))
+                del self.channel_connections[channel]
 
-        if not self.channel_connections[channel]:
-            logger.info('remove channel {} from the register'.format(channel))
-            del self.channel_connections[channel]
+        self.connection_channels[ws_conn].difference_update(channels)
         if not self.connection_channels[ws_conn]:
             logger.info('remove connection {} from the register'.format(ws_conn))
             del self.connection_channels[ws_conn]
 
-    def get_connections(self):
+    def get_connections(self, channel=None):
+        if channel:
+            return self.channel_connections[channel] if channel in self.channel_connections\
+                                                     else self._channel_connections_type()
         return self.connection_channels.keys()
+
+    def get_channels(self, ws_conn=None):
+        if ws_conn:
+            return self.connection_channels[ws_conn] if ws_conn in self.connection_channels\
+                                                     else self._connection_channels_type()
+        return self.channel_connections.keys()
 
     @property
     def channels_count(self):
@@ -53,9 +70,6 @@ class WsConnectionRegister:
     @property
     def connections_count(self):
         return len(self.connection_channels.keys())
-
-    def __getitem__(self, channel):
-        return self.channel_connections[channel]
 
     def __str__(self):
         return '<{} channels_count={}, connections_count={}>'.format(self.__class__.__name__, self.channels_count,
@@ -72,14 +86,15 @@ def check_connections(register, loop):
             logger.debug('{}'.format((ws.closed, ws.close_code, ws.exception())))
             closed.append(ws)
 
-    for order_id, ws in closed:
-        register.remove(order_id, ws)
+    for ws in closed:
+        orders = register.get_channels(ws)
+        register.remove_channels(orders, ws)
 
     loop.call_later(CHECK_CONN_DELAY, check_connections, register, loop)
 
 
 async def notify(register, order_id, state):
-    ws_list = register[order_id].copy()  # работаем с копией, чтобы оригинал регистра не изменялся по лету(in place)
+    ws_list = register.get_connections(order_id).copy()  # работаем с копией, чтобы оригинал регистра не изменялся по лету(in place)
     logger.info('send state {} to order {}'.format(state, order_id))
 
     data = {'state': state, 'order_id': order_id}
@@ -89,8 +104,9 @@ async def notify(register, order_id, state):
     elif state == ORD_STATE_DONE:
         for ws in ws_list:
             ws.send_json(data)
-            await ws.close()
-            register.remove(order_id, ws)
+            register.remove_channels(order_id, ws)
+            if not register.get_channels(ws):
+                await ws.close()
 
 
 async def registrate_notification(request):
@@ -129,12 +145,13 @@ async def registrate_connection(request):
                 logger.debug('message data: {}'.format(msg.data))
                 data = json.loads(msg.data)
                 order_id = data.get('order_id', '')
-
-                if order_id and len(request.app[REGISTER][order_id]) > MAX_ORD_CONN_COUNT:
-                    logger.error('max connections count of the order {}'.format(order_id))
-                    ws.close()
-                elif order_id:
-                    request.app[REGISTER][order_id].add(ws)
+                # if order_id and len(request.app[REGISTER][order_id]) > MAX_ORD_CONN_COUNT:
+                #     logger.error('max connections count of the order {}'.format(order_id))
+                #     ws.close()
+                if order_id: # todo убрать
+                    request.app[REGISTER].add_channels(order_id, ws)
+                elif data: # множественная вставка
+                    request.app[REGISTER].add_channels(data, ws)
                 else:
                     logger.error('undefined action')
                     ws.close()
