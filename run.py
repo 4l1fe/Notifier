@@ -144,12 +144,12 @@ async def registrate_connection(request):
             if msg.type == aiohttp.WSMsgType.TEXT:
                 logger.debug('message data: {}'.format(msg.data))
                 data = json.loads(msg.data)
-                order_id = data.get('order_id', '')
+                if not isinstance(data, list): # todo убрать
+                    order_id = data.get('order_id', '')
+                    request.app[REGISTER].add_channels(order_id, ws)
                 # if order_id and len(request.app[REGISTER][order_id]) > MAX_ORD_CONN_COUNT:
                 #     logger.error('max connections count of the order {}'.format(order_id))
                 #     ws.close()
-                if order_id: # todo убрать
-                    request.app[REGISTER].add_channels(order_id, ws)
                 elif data: # множественная вставка
                     request.app[REGISTER].add_channels(data, ws)
                 else:
