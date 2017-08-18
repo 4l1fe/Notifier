@@ -2,32 +2,34 @@ import asyncio
 import aiohttp
 
 
-limit = 15000
-async def send():
-    async with aiohttp.ClientSession(connector=aiohttp.connector.TCPConnector(limit=limit)) as session:
+async def send(i):
+    session = aiohttp.ClientSession()
+    ws = await session.ws_connect('ws://127.0.0.1:8080/')
+    print('connected %s' % i)
+    await ws.send_json([1,2,3,4,5,6])
+    # conns.append(ws)
+    print('wait for data %s' % i)
+    async for msg in ws:
+        if msg.type == aiohttp.WSMsgType.TEXT:
+            if msg.data:
+                print('got data %s' % i)
+            else:
+                print('error %s' % i)
+        elif msg.type == aiohttp.WSMsgType.CLOSED:
+            break
+        elif msg.type == aiohttp.WSMsgType.ERROR:
+            break
 
-        conns = []
-        print('send')
-        for i in range(limit):
-            try:
-                ws = await session.ws_connect('ws://127.0.0.1:8080/')
-                conns.append(ws)
-                ws.send_json({'order_id': str(i)})
-            except:
-                import traceback
-                traceback.print_exc()
+    session.close()
 
-        print('sleep')
-        await asyncio.sleep(10)
 
-        print('close')
-        for ws in conns:
-            ws.close()
-
-        print('clear')
-        conns.clear()
-
+async def run(n):
+    tasks = []
+    for i in range(n):
+        task = asyncio.ensure_future(send(i))
+        tasks.append(task)
+    await asyncio.gather(*tasks)
 
 if __name__ == '__main__':
     loop = asyncio.get_event_loop()
-    loop.run_until_complete(send())
+    loop.run_until_complete(run(2))

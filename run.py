@@ -20,7 +20,7 @@ CHECK_CONN_DELAY = 2 * HEARTBEAT
 logger = logging.getLogger(LOGGER_NAME)
 
 
-class WsConnectionRegister:
+class ChannelsRegister:
 
     def __init__(self):
         self._connection_channels_type = set #todo изменить на list? где-то упростит/усложнит код
@@ -116,7 +116,7 @@ async def registrate_notification(request):
     logger.debug('order {}, state {}'.format(params['order_id'], params['state']))
 
     e_text = ''
-    if params['order_id'] not in request.app[REGISTER]:
+    if not request.app[REGISTER].get_connections(params['order_id']):
         e_text = 'no such ws connection'
     elif not any(params['state'] == state for state in (ORD_STATE_DONE, ORD_STATE_RELOAD)):
         e_text = 'invalid state {}'.format(params['state'])
@@ -147,9 +147,6 @@ async def registrate_connection(request):
                 if not isinstance(data, list): # todo убрать
                     order_id = data.get('order_id', '')
                     request.app[REGISTER].add_channels(order_id, ws)
-                # if order_id and len(request.app[REGISTER][order_id]) > MAX_ORD_CONN_COUNT:
-                #     logger.error('max connections count of the order {}'.format(order_id))
-                #     ws.close()
                 elif data: # множественная вставка
                     request.app[REGISTER].add_channels(data, ws)
                 else:
@@ -194,7 +191,7 @@ if __name__ == '__main__':
     )
 
     app = web.Application()
-    app[REGISTER] = WsConnectionRegister()
+    app[REGISTER] = ChannelsRegister()
     app.router.add_post('/order', registrate_notification)
     app.router.add_get('/', registrate_connection)
 
