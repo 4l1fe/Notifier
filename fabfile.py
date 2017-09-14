@@ -48,8 +48,7 @@ def check_user(func):
 
 @task
 def bootstrap():
-    key_prefix = 'key_tmp'
-    with settings(warn_only=True):
+    with settings(hide('stdout', 'warnings'), warn_only=True):
         # установка необходимых библиотек с ноля
         run('''apt-get update && \
                apt-get install -y linux-image-extra-$(uname -r) linux-image-extra-virtual && \
@@ -60,25 +59,35 @@ def bootstrap():
                apt-get install -y docker-ce=17.03.1~ce-0~ubuntu-xenial''')
 
         # создание пользователя, под которым в дальнейшем происходит работа
-        run('''adduser {user} --disabled-password --gecos "" && \
-               adduser {user} docker'''.format(user=user))
+        create_host_user()
 
         # генерация ключей и их настройка, удаление публичного
-        ssh_dir = home_dir / '.ssh'
-        with cd(str(home_dir)):
-            run('''su {user}  -c "mkdir {ssh_dir} && \
-                   ssh-keygen -f {key_prefix} -N '' -q && \
-                   cat {key_prefix}.pub > {authorized_keys} && \
-                   chmod 600 {authorized_keys} && \
-                   chown {user}:{user} {authorized_keys} && \
-                   rm {key_prefix}.pub" '''.format(user=user, key_prefix=key_prefix, ssh_dir=ssh_dir,
-                                                   authorized_keys=ssh_dir / 'authorized_keys'))
+        generate_ssh_key()
 
-            # вывод приватного ключа для сохранения и удаление
-            priv_key = run('''cat {0} && \
-                              rm {0}'''.format(key_prefix))
-            puts(priv_key)
-            puts('SAVE THIS PRIVATE KEY')
+
+@task
+def create_host_user():
+    run('''adduser {user} --disabled-password --gecos "" && \
+           adduser {user} docker'''.format(user=user))
+
+
+@task
+def generate_ssh_key():
+    key_prefix = 'key_tmp'
+    ssh_dir = home_dir / '.ssh'
+    with cd(str(home_dir),), hide('stdout', 'warnings'):
+        run('su {user} -c "mkdir {ssh_dir}"'.format(user=user, ssh_dir=ssh_dir), warn_only=True)
+        run('''su {user} -c "ssh-keygen -f {key_prefix} -N '' -q && \
+            cat {key_prefix}.pub > {authorized_keys} && \
+            chmod 600 {authorized_keys} && \
+            chown {user}:{user} {authorized_keys} && \
+            rm {key_prefix}.pub" '''.format(user=user, key_prefix=key_prefix, ssh_dir=ssh_dir,
+                                            authorized_keys=ssh_dir / 'authorized_keys'))
+
+        # вывод приватного ключа для сохранения и удаление
+        priv_key = run('''cat {0} && rm {0}'''.format(key_prefix))
+        puts(priv_key)
+        puts('ОБЯЗАТЕЛЬНО СОХРАНИТЬ ЭТОТ КЛЮЧ')
 
 
 @task(name='build')
