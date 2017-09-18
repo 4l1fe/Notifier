@@ -9,12 +9,10 @@ from aiohttp import web
 
 
 LOGGER_NAME = 'notifier'
-REGISTER = 'order_register'
-ORD_STATE_RELOAD = 'reload'
+REGISTER = 'register'
 ORD_STATE_DONE = 'done'
 HEARTBEAT = 3
 CHECK_CONN_DELAY = 2 * HEARTBEAT
-# MAX_ORD_CONN_COUNT = 10
 
 
 logger = logging.getLogger(LOGGER_NAME)
@@ -87,49 +85,44 @@ def check_connections(register, loop):
             closed.append(ws)
 
     for ws in closed:
-        orders = register.get_channels(ws)
-        register.remove_channels(orders, ws)
+        channels = register.get_channels(ws)
+        register.remove_channels(channels, ws)
 
     loop.call_later(CHECK_CONN_DELAY, check_connections, register, loop)
 
 
-async def notify(register, order_id, state):
-    ws_list = register.get_connections(order_id).copy()  # работаем с копией, чтобы оригинал регистра не изменялся по лету(in place)
-    logger.info('send state {} to order {}'.format(state, order_id))
+async def notify(register, channel, data):
+    ws_list = register.get_connections(channel).copy()  # работаем с копией, чтобы оригинал регистра не изменялся по лету(in place)
+    logger.info('send data {} to channel {}'.format(data, channel))
 
-    data = {'state': state, 'order_id': order_id}
-    if state == ORD_STATE_RELOAD:
+    state = data.get('state', None)
+    if state != ORD_STATE_DONE:
         for ws in ws_list:
             ws.send_json(data)
-    elif state == ORD_STATE_DONE:
+    else:
         for ws in ws_list:
             ws.send_json(data)
-            register.remove_channels(order_id, ws)
+            register.remove_channels(channel, ws)
             if not register.get_channels(ws):
                 await ws.close()
 
 
-async def registrate_notification(request):
-    logger.info('registrate notification')
+async def publish_notification(request):
+    logger.info('publish notification')
     response = dict(success=True)
     params = await request.json()
-    logger.debug('order {}, state {}'.format(params['order_id'], params['state']))
+    logger.debug('channel {}, data {}'.format(params['channel'], params['data']))
 
-    e_text = ''
-    if not request.app[REGISTER].get_connections(params['order_id']):
-        e_text = 'no such ws connection'
-    elif not any(params['state'] == state for state in (ORD_STATE_DONE, ORD_STATE_RELOAD)):
-        e_text = 'invalid state {}'.format(params['state'])
-
-    if e_text:
+    if not request.app[REGISTER].get_connections(params['channel']):
+        e_text = 'no such channel'
         logger.error(e_text)
         response['success'] = False
         response['error'] = e_text
         return web.json_response(response)
 
-    pnotify = partial(notify, request.app[REGISTER], params['order_id'], params['state'])
+    pnotify = partial(notify, request.app[REGISTER], params['channel'], params['data'])
     asyncio.ensure_future(pnotify())
-    logger.info('notification is registered')
+    logger.info('notification is published')
 
     return web.json_response(response)
 
@@ -145,8 +138,8 @@ async def registrate_connection(request):
                 logger.debug('message data: {}'.format(msg.data))
                 data = json.loads(msg.data)
                 if not isinstance(data, list): # todo убрать
-                    order_id = data.get('order_id', '')
-                    request.app[REGISTER].add_channels(order_id, ws)
+                    channel = data.get('order_id', '')
+                    request.app[REGISTER].add_channels(channel, ws)
                 elif data: # множественная вставка
                     request.app[REGISTER].add_channels(data, ws)
                 else:
@@ -192,7 +185,7 @@ if __name__ == '__main__':
 
     app = web.Application()
     app[REGISTER] = ChannelsRegister()
-    app.router.add_post('/order', registrate_notification)
+    app.router.add_post('/channel', publish_notification)
     app.router.add_get('/', registrate_connection)
 
     loop = asyncio.get_event_loop()
