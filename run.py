@@ -98,12 +98,13 @@ async def notify(register, channel, data):
     logger.info('send data {} to channel {}'.format(data, channel))
 
     state = data.get('state', None)
+    msg = {'channel': channel, 'data': data}
     if state != ORD_STATE_DONE:
         for ws in ws_list:
-            ws.send_json(data)
+            ws.send_json(msg)
     else:
         for ws in ws_list:
-            ws.send_json(data)
+            ws.send_json(msg)
             register.remove_channels(channel, ws)
             if not register.get_channels(ws):
                 await ws.close()
