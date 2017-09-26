@@ -11,6 +11,7 @@ from aiohttp import web
 LOGGER_NAME = 'notifier'
 REGISTER = 'register'
 ORD_STATE_DONE = 'done'
+ORD_STATE_RELOAD = 'reload'
 HEARTBEAT = 3
 CHECK_CONN_DELAY = 2 * HEARTBEAT
 
@@ -107,6 +108,22 @@ async def notify(register, channel, data):
                 await ws.close()
 
 
+async def notify2(register, order_id, state):  #todo выпилить
+    ws_list = register.get_connections(order_id).copy()  # работаем с копией, чтобы оригинал регистра не изменялся по лету(in place)
+    logger.info('send state {} to order {}'.format(state, order_id))
+
+    data = {'state': state, 'order_id': order_id}
+    if state == ORD_STATE_RELOAD:
+        for ws in ws_list:
+            ws.send_json(data)
+    elif state == ORD_STATE_DONE:
+        for ws in ws_list:
+            ws.send_json(data)
+            register.remove_channels(order_id, ws)
+            if not register.get_channels(ws):
+                await ws.close()
+
+
 async def publish_notification(request):
     logger.info('publish notification')
     response = dict(success=True)
@@ -125,6 +142,29 @@ async def publish_notification(request):
     logger.info('notification is published')
 
     return web.json_response(response)
+
+
+async def registrate_notification(request):  #todo выпилить
+    logger.info('registrate notification')
+    response = dict(success=True)
+    params = await request.json()
+    logger.debug('order {}, state {}'.format(params['order_id'], params['state']))
+
+    e_text = ''
+    if not request.app[REGISTER].get_connections(params['order_id']):
+        e_text = 'no such ws connection'
+    elif not any(params['state'] == state for state in (ORD_STATE_DONE, ORD_STATE_RELOAD)):
+        e_text = 'invalid state {}'.format(params['state'])
+
+    if e_text:
+        logger.error(e_text)
+        response['success'] = False
+        response['error'] = e_text
+        return web.json_response(response)
+
+    pnotify = partial(notify2, request.app[REGISTER], params['order_id'], params['state'])
+    asyncio.ensure_future(pnotify())
+    logger.info('notification is registered')
 
 
 async def registrate_connection(request):
@@ -185,7 +225,8 @@ if __name__ == '__main__':
 
     app = web.Application()
     app[REGISTER] = ChannelsRegister()
-    app.router.add_post('/channel', publish_notification)
+    app.router.add_post('/publish', publish_notification)
+    app.router.add_post('/order', registrate_notification)
     app.router.add_get('/', registrate_connection)
 
     loop = asyncio.get_event_loop()
