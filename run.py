@@ -7,7 +7,8 @@ from collections import defaultdict
 from functools import partial
 from aiohttp import web
 
-
+NOTIFY_HOST = '0.0.0.0'
+NOTIFY_PORT = 8080
 LOGGER_NAME = 'notifier'
 REGISTER = 'register'
 ORD_STATE_DONE = 'done'
@@ -232,4 +233,4 @@ if __name__ == '__main__':
     loop = asyncio.get_event_loop()
     loop.set_debug(True)
     loop.call_later(CHECK_CONN_DELAY, check_connections, app[REGISTER], loop)
-    web.run_app(app, host='0.0.0.0', port=8080, loop=loop)
+    web.run_app(app, host=NOTIFY_HOST, port=NOTIFY_PORT, loop=loop)

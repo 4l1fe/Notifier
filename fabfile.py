@@ -1,36 +1,17 @@
 from pathlib import Path
-from fabric.contrib.project import rsync_project
-from fabric.contrib.files import exists
 from fabric.api import *
+from run import NOTIFY_PORT
 
 
 env.use_ssh_config = True
 
 user = 'notify'
 home_dir = Path('/home') / user
-project_dir = Path('Notify')
 deploy_dir = Path('deploy')
-env_vars_file = deploy_dir / '.env'
 docker_file = deploy_dir / 'Dockerfile'
-
-im_name = cont_name = 'notify'
-
-str_project_dir = str(project_dir)
+cont_name = 'notify'
+im_name = 'registry/' + cont_name
 mapped_addr = '127.0.0.1:8080'
-rsync_exclude = '''README
-fabfile.py
-tests.py
-*.log
-*.env
-.coverage
-.gitignore
-.git
-.idea
-.auxilary
-__pycache__
-htmlcov
-*cookie_data*
-'''
 
 
 def check_user(func):
@@ -45,6 +26,20 @@ def check_user(func):
 
     return wrapper
 
+
+def _make_full_img_name(tag):
+    tag = im_name + ':' + tag if tag else im_name
+    return tag
+
+
+def _check_doker_hub_login(remote=False):
+    with hide('output', 'running'):
+        if remote:
+            info = run('docker info')
+        else:
+            info = local('docker info', capture=True)
+    if not 'Username' in info:
+        abort('НЕОБХОДИМО АВТОРИЗОВАТЬСЯ В ДОКЕР ХАБЕ')
 
 @task
 def bootstrap():
@@ -90,21 +85,29 @@ def generate_ssh_key():
         puts('ОБЯЗАТЕЛЬНО СОХРАНИТЬ ЭТОТ КЛЮЧ')
 
 
-@task(name='build')
-@check_user
-def build(delete=True, ):
-    excluded = rsync_exclude.strip().splitlines()
-    stop()
-    rsync_project(remote_dir=str_project_dir, local_dir='.', exclude=excluded, delete=delete)
-    with cd(str_project_dir):
-        run('docker build -t {} -f {} .'.format(im_name, docker_file))
+@task
+def build(tag=None):
+    img_name = _make_full_img_name(tag)
+    local('docker build -t {} -f {} .'.format(img_name, docker_file))
+    return img_name
+
+
+@task
+def push(tag=None):
+    _check_doker_hub_login()
+    tag = build(tag)
+    local('docker push {}'.format(tag))
 
 
 @task(name='start')
 @check_user
-def start(mapped_addr=mapped_addr):
-    with cd(str_project_dir):
-        run("docker run -d -ti -p {}:8080 --name {} {}".format(mapped_addr, cont_name, im_name))
+def start(mapped_addr=mapped_addr, tag=None):
+    _check_doker_hub_login(remote=True)
+    img_name = _make_full_img_name(tag)
+    stop()
+    run('docker pull {}'.format(img_name))
+    run("docker run -d -ti -p {}:{} --name {} --restart=always {}"
+        .format(mapped_addr, NOTIFY_PORT, cont_name, img_name))
 
 
 @task(name='stop')
