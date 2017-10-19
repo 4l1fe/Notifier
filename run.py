@@ -167,7 +167,7 @@ async def registrate_notification(request):  #todo выпилить
     pnotify = partial(notify2, request.app[REGISTER], params['order_id'], params['state'])
     asyncio.ensure_future(pnotify())
     logger.info('notification is registered')
-
+    return web.json_response(response)
 
 async def registrate_connection(request):
     ws = web.WebSocketResponse(heartbeat=HEARTBEAT)
