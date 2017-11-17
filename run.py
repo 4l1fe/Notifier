@@ -5,6 +5,7 @@ import aiohttp
 from logging.config import dictConfig
 from collections import defaultdict
 from functools import partial
+from asyncio.futures import CancelledError
 from aiohttp import web
 
 NOTIFY_HOST = '0.0.0.0'
@@ -13,7 +14,7 @@ LOGGER_NAME = 'notifier'
 REGISTER = 'register'
 ORD_STATE_DONE = 'done'
 ORD_STATE_RELOAD = 'reload'
-HEARTBEAT = 3
+HEARTBEAT = 10
 CHECK_CONN_DELAY = 2 * HEARTBEAT
 
 
@@ -194,8 +195,10 @@ async def registrate_connection(request):
                 logger.warning('another msg.type {}'.format(msg))
 
         logger.info('connection is closed')
+    except CancelledError:
+        logger.info('heartbeat closing')
     except:
-        logger.exception('')
+        logger.exception('undefined error')
 
     return ws
 
