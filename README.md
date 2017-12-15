@@ -16,3 +16,9 @@ FORMAT: 1A
     + Body
 
             {"success" : true}
+
+# WEBSOCKET /
+Устанавливает websocket соединение и передает список каналов, на публикацию которых необходимо подписаться
+
++ Parameters
+    + (array[string], required)
